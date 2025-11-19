@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>予定表</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #f4f4f4;
+      color: #333;
+    }
+
+    .app {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .schedule-panel,
+    .calendar-panel {
+      padding: 24px;
+      background: #fff;
+    }
+
+    .schedule-panel {
+      flex: 1;
+      border-right: 1px solid #eee;
+    }
+
+    .calendar-panel {
+      width: 420px;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+    }
+
+    .selected-date {
+      font-size: 1.1rem;
+      margin: 0 0 8px;
+      color: #374151;
+      font-weight: 600;
+    }
+
+    .duty-summary {
+      margin-top: 16px;
+      padding: 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f9fafb;
+    }
+
+    .duty-label {
+      margin: 0 0 8px;
+      font-weight: 600;
+      color: #4b5563;
+    }
+
+    .duty-value {
+      margin: 0;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #111827;
+    }
+
+    .schedule-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .schedule-list li {
+      padding: 12px;
+      margin-bottom: 8px;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+
+    .schedule-list li strong {
+      display: block;
+      font-size: 1.05rem;
+    }
+
+    .calendar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .calendar-header button {
+      border: none;
+      background: #4f46e5;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .calendar-header button[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #e5e7eb;
+    }
+
+    th {
+      text-align: center;
+      padding: 8px 0;
+      color: #6b7280;
+      font-weight: 600;
+      border: 1px solid #e5e7eb;
+    }
+
+    td {
+      text-align: center;
+      padding: 12px 0 30px;
+      cursor: pointer;
+      position: relative;
+      border: 1px solid #e5e7eb;
+    }
+
+    td:hover {
+      background: #eef2ff;
+    }
+
+    td.disabled {
+      color: #ccc;
+      cursor: default;
+    }
+
+    td.selected .day-number {
+      background: #4f46e5;
+      color: #fff;
+    }
+
+    td.today {
+      border: 3px solid #ef4444;
+    }
+
+    td.has-event::after {
+      content: '';
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #4f46e5;
+    }
+
+    .day-number {
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+    }
+
+    .band {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 4px;
+      height: 16px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #1f2937;
+      pointer-events: none;
+    }
+
+    .band-start {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+      border-top-left-radius: 999px;
+      border-bottom-left-radius: 999px;
+    }
+
+    .band-middle {
+      border-radius: 0;
+    }
+
+    .band-end {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      border-top-right-radius: 999px;
+      border-bottom-right-radius: 999px;
+    }
+
+    .band-single {
+      border-radius: 999px;
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        flex-direction: column;
+      }
+
+      .calendar-panel {
+        width: auto;
+        border-top: 1px solid #eee;
+      }
+
+      .schedule-panel {
+        border-right: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="schedule-panel">
+      <h1 id="pageTitle">本日の日付</h1>
+      <ul class="schedule-list" id="scheduleList"></ul>
+      <div class="duty-summary">
+        <p class="selected-date" id="selectedDate"></p>
+        <p class="duty-label">小原の勤務予定</p>
+        <p class="duty-value" id="dutyValue">-</p>
+      </div>
+    </section>
+    <section class="calendar-panel">
+      <div class="calendar-header">
+        <button id="prevMonth">◀</button>
+        <div id="calendarTitle"></div>
+        <button id="nextMonth">▶</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>日</th>
+            <th>月</th>
+            <th>火</th>
+            <th>水</th>
+            <th>木</th>
+            <th>金</th>
+            <th>土</th>
+          </tr>
+        </thead>
+        <tbody id="calendarBody"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    const scheduleData = {
+      '2024-06-05': [
+        { title: '企画ミーティング', time: '10:00-11:00' },
+        { title: 'ランチ @社外', time: '12:30-13:30' }
+      ],
+      '2024-06-10': [
+        { title: 'クライアント訪問', time: '14:00-15:30' }
+      ],
+      '2024-06-21': [
+        { title: '社内勉強会', time: '16:00-17:30' }
+      ]
+    };
+
+    const bandColors = {
+      A: 'rgba(239, 68, 68, 0.35)',
+      B: 'rgba(59, 130, 246, 0.35)',
+      C: 'rgba(250, 204, 21, 0.35)',
+      '休': 'rgba(34, 197, 94, 0.35)'
+    };
+
+    const bandCycle = [
+      { label: 'A', days: 4 },
+      { label: '休', days: 1 },
+      { label: 'C', days: 4 },
+      { label: '休', days: 2 },
+      { label: 'B', days: 4 },
+      { label: '休', days: 1 }
+    ];
+
+    const cycleStartDate = new Date('2025-11-09T00:00:00');
+    const cycleLength = bandCycle.reduce((sum, block) => sum + block.days, 0);
+
+    const pageTitle = document.getElementById('pageTitle');
+    const calendarTitle = document.getElementById('calendarTitle');
+    const calendarBody = document.getElementById('calendarBody');
+    const selectedDateLabel = document.getElementById('selectedDate');
+    const scheduleList = document.getElementById('scheduleList');
+    const dutyValue = document.getElementById('dutyValue');
+
+    const today = new Date();
+    let currentYear = today.getFullYear();
+    let currentMonth = today.getMonth();
+    let selectedDate = new Date(today);
+
+    function formatDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function formatDisplayDate(date) {
+      return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日(${['日','月','火','水','木','金','土'][date.getDay()]})`;
+    }
+
+    function renderSchedule(dateStr) {
+      const schedules = scheduleData[dateStr] || [];
+      scheduleList.innerHTML = '';
+      schedules.forEach(({ title, time }) => {
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>${title}</strong><span>${time}</span>`;
+        scheduleList.appendChild(li);
+      });
+    }
+
+    function updateDutySummary(date) {
+      const info = getBandInfo(date);
+      dutyValue.textContent = info ? info.label : '―';
+    }
+
+    function getBandInfo(date) {
+      const diffDays = Math.floor((date - cycleStartDate) / (1000 * 60 * 60 * 24));
+      let offset = diffDays % cycleLength;
+      if (offset < 0) offset += cycleLength;
+
+      let accumulated = 0;
+      for (const block of bandCycle) {
+        const spanStart = accumulated;
+        const spanEnd = accumulated + block.days - 1;
+        if (offset >= spanStart && offset <= spanEnd) {
+          const position =
+            block.days === 1
+              ? 'single'
+              : offset === spanStart
+              ? 'start'
+              : offset === spanEnd
+              ? 'end'
+              : 'middle';
+          return {
+            label: block.label,
+            color: bandColors[block.label],
+            position
+          };
+        }
+        accumulated += block.days;
+      }
+      return null;
+    }
+
+    function renderCalendar(year, month) {
+      calendarBody.innerHTML = '';
+      calendarTitle.textContent = `${year}年 ${month + 1}月`;
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      let date = 1;
+      for (let row = 0; row < 6; row++) {
+        const tr = document.createElement('tr');
+        for (let col = 0; col < 7; col++) {
+          const td = document.createElement('td');
+          if (row === 0 && col < firstDay) {
+            td.classList.add('disabled');
+            tr.appendChild(td);
+            continue;
+          }
+
+          if (date > daysInMonth) {
+            td.classList.add('disabled');
+            tr.appendChild(td);
+            continue;
+          }
+
+          const cellDate = new Date(year, month, date);
+          const cellDateStr = formatDate(cellDate);
+          const isToday = cellDateStr === formatDate(today);
+          const dayNumber = document.createElement('div');
+          dayNumber.className = 'day-number';
+          dayNumber.textContent = date;
+          td.appendChild(dayNumber);
+
+          const bandInfo = getBandInfo(cellDate);
+          if (bandInfo) {
+            const band = document.createElement('div');
+            band.className = `band band-${bandInfo.position}`;
+            band.textContent = bandInfo.label;
+            band.style.backgroundColor = bandInfo.color;
+            td.appendChild(band);
+          }
+
+          if (scheduleData[cellDateStr]) {
+            td.classList.add('has-event');
+          }
+
+          if (isToday) {
+            td.classList.add('today');
+          }
+
+          if (cellDateStr === formatDate(selectedDate)) {
+            td.classList.add('selected');
+          }
+
+          td.addEventListener('click', () => {
+            selectedDate = cellDate;
+            selectedDateLabel.textContent = formatDisplayDate(cellDate);
+            renderSchedule(cellDateStr);
+            updateDutySummary(cellDate);
+            renderCalendar(currentYear, currentMonth);
+          });
+
+          tr.appendChild(td);
+          date++;
+        }
+        calendarBody.appendChild(tr);
+      }
+    }
+
+    document.getElementById('prevMonth').addEventListener('click', () => {
+      if (currentMonth === 0) {
+        currentYear--;
+        currentMonth = 11;
+      } else {
+        currentMonth--;
+      }
+      renderCalendar(currentYear, currentMonth);
+    });
+
+    document.getElementById('nextMonth').addEventListener('click', () => {
+      if (currentMonth === 11) {
+        currentYear++;
+        currentMonth = 0;
+      } else {
+        currentMonth++;
+      }
+      renderCalendar(currentYear, currentMonth);
+    });
+
+    function init() {
+      pageTitle.textContent = `本日の日付 - ${formatDisplayDate(today)}`;
+      selectedDateLabel.textContent = formatDisplayDate(selectedDate);
+      renderSchedule(formatDate(selectedDate));
+      renderCalendar(currentYear, currentMonth);
+      updateDutySummary(selectedDate);
+    }
+
+    init();
+  </script>
+</body>
+</html>
