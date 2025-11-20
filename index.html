@@ -386,6 +386,7 @@
           <div class="note" id="passwordMessage"></div>
         </div>
         <div class="status-text hidden" id="editStatus">編集モード中</div>
+        <button class="hidden" id="exitEditButton">通常モードに戻る</button>
         <button class="hidden" id="musicButton">音楽の設定</button>
         <div class="music-panel hidden" id="musicPanel">
           <div>流したい曲のファイルを選択してください</div>
@@ -449,6 +450,7 @@
     const passwordSubmit = document.getElementById('passwordSubmit');
     const passwordMessage = document.getElementById('passwordMessage');
     const editStatus = document.getElementById('editStatus');
+    const exitEditButton = document.getElementById('exitEditButton');
     const musicButton = document.getElementById('musicButton');
     const musicPanel = document.getElementById('musicPanel');
     const musicInput = document.getElementById('musicInput');
@@ -464,6 +466,7 @@
     let audioPlayer = null;
     let audioObjectUrl = '';
     let selectedMusicFile = null;
+    let musicDb = null;
 
     function formatDate(date) {
       const y = date.getFullYear();
@@ -519,6 +522,72 @@
       const remaining = 200 - scheduleInput.value.length;
       const base = `残り${remaining}文字`;
       editPanelNote.textContent = message ? `${message} / ${base}` : base;
+    }
+
+    function getMusicDb() {
+      if (!('indexedDB' in window)) {
+        return Promise.reject(new Error('IndexedDB not supported'));
+      }
+      if (musicDb) return Promise.resolve(musicDb);
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('yoteiMusic', 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains('files')) {
+            db.createObjectStore('files');
+          }
+        };
+        request.onsuccess = () => {
+          musicDb = request.result;
+          resolve(musicDb);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function saveMusicToDb(file) {
+      return getMusicDb().then(
+        (db) =>
+          new Promise((resolve, reject) => {
+            const tx = db.transaction('files', 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.objectStore('files').put({ id: 'current', name: file.name, type: file.type, blob: file });
+          })
+      );
+    }
+
+    function loadMusicFromDb() {
+      return getMusicDb().then(
+        (db) =>
+          new Promise((resolve, reject) => {
+            const tx = db.transaction('files', 'readonly');
+            const req = tx.objectStore('files').get('current');
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error);
+          })
+      );
+    }
+
+    function saveCustomSchedules() {
+      try {
+        localStorage.setItem('customSchedules', JSON.stringify(customSchedules));
+      } catch (e) {
+        // 保存失敗時は黙って無視
+      }
+    }
+
+    function loadCustomSchedules() {
+      const stored = localStorage.getItem('customSchedules');
+      if (!stored) return;
+      try {
+        const parsed = JSON.parse(stored);
+        Object.keys(parsed).forEach((key) => {
+          customSchedules[key] = parsed[key];
+        });
+      } catch (e) {
+        // 壊れたデータは無視
+      }
     }
 
     function getBandInfo(date) {
@@ -661,20 +730,35 @@
       audioPlayer.play().then(() => {
         musicMessage.textContent = `再生中: ${name}`;
       }).catch(() => {
-        musicMessage.textContent = '再生を開始できませんでした。ブラウザの設定を確認してください。';
+        musicMessage.textContent = `保存済みの曲: ${name}（再生がブロックされています。音楽の設定を開いて再生してください）`;
       });
     }
 
-    function loadSavedMusic() {
-      const saved = localStorage.getItem('savedMusic');
-      if (!saved) return;
+    async function loadSavedMusic() {
+      // IndexedDB 優先
       try {
-        const parsed = JSON.parse(saved);
-        if (parsed.dataUrl && parsed.name) {
-          playAudioSource(parsed.dataUrl, parsed.name, false);
+        const saved = await loadMusicFromDb();
+        if (saved && saved.blob) {
+          const src = URL.createObjectURL(saved.blob);
+          playAudioSource(src, saved.name || '保存された曲', true);
+          musicMessage.textContent = `保存済みの曲: ${saved.name || '保存された曲'}`;
+          return;
         }
       } catch (e) {
-        // 保存データが壊れている場合は無視
+        // DB取得に失敗した場合はローカルストレージへフォールバック
+      }
+
+      const savedLocal = localStorage.getItem('savedMusic');
+      if (savedLocal) {
+        try {
+          const parsed = JSON.parse(savedLocal);
+          if (parsed.dataUrl && parsed.name) {
+            playAudioSource(parsed.dataUrl, parsed.name, false);
+            musicMessage.textContent = `保存済みの曲: ${parsed.name}`;
+          }
+        } catch (e) {
+          // 保存データが壊れている場合は無視
+        }
       }
     }
 
@@ -693,6 +777,7 @@
         editStatus.classList.remove('hidden');
         editModeButton.textContent = '編集モード中';
         editModeButton.disabled = true;
+        exitEditButton.classList.remove('hidden');
         musicButton.classList.remove('hidden');
         updateEditPanel(selectedDate);
       } else {
@@ -703,6 +788,18 @@
     musicButton.addEventListener('click', () => {
       musicPanel.classList.toggle('hidden');
       musicMessage.textContent = '';
+    });
+
+    exitEditButton.addEventListener('click', () => {
+      isEditMode = false;
+      scheduleEditPanel.classList.add('hidden');
+      editStatus.classList.add('hidden');
+      exitEditButton.classList.add('hidden');
+      editModeButton.textContent = '編集モード';
+      editModeButton.disabled = false;
+      passwordPanel.classList.add('hidden');
+      musicPanel.classList.add('hidden');
+      musicButton.classList.add('hidden');
     });
 
     musicInput.addEventListener('change', () => {
@@ -720,20 +817,42 @@
       musicMessage.textContent += '（保存するには「音楽を保存」を押してください）';
     });
 
-    musicSaveButton.addEventListener('click', () => {
+    musicSaveButton.addEventListener('click', async () => {
       if (!selectedMusicFile) {
         musicMessage.textContent = '先に音楽ファイルを選択してください。';
         return;
       }
       const file = selectedMusicFile;
+      let savedInDb = false;
+      let dbError = null;
+      try {
+        await saveMusicToDb(file);
+        localStorage.setItem('savedMusicMeta', JSON.stringify({ name: file.name }));
+        const objectUrl = URL.createObjectURL(file);
+        playAudioSource(objectUrl, file.name, true);
+        musicMessage.textContent = `保存しました: ${file.name}`;
+        savedInDb = true;
+      } catch (e) {
+        dbError = e;
+        musicMessage.textContent = 'IndexedDBへの保存に失敗しました。ローカルストレージへ保存を試みます。';
+      }
+
+      // フォールバック: 旧バージョンのデータ形式も保持
       const reader = new FileReader();
       reader.onload = () => {
         try {
           localStorage.setItem('savedMusic', JSON.stringify({ name: file.name, dataUrl: reader.result }));
-          musicMessage.textContent = `保存しました: ${file.name}`;
-          playAudioSource(reader.result, file.name, false);
+          localStorage.setItem('savedMusicMeta', JSON.stringify({ name: file.name }));
+          if (!savedInDb) {
+            playAudioSource(reader.result, file.name, false);
+            musicMessage.textContent = `ローカルストレージに保存しました: ${file.name}`;
+          }
         } catch (e) {
-          musicMessage.textContent = '保存に失敗しました。ストレージ容量を確認してください。';
+          musicMessage.textContent =
+            '音楽を保存できませんでした。プライベートブラウズを解除するか、ストレージ空き容量を確認してください。';
+          if (dbError) {
+            musicMessage.textContent += '（IndexedDB/LocalStorage両方で失敗）';
+          }
         }
       };
       reader.onerror = () => {
@@ -753,19 +872,32 @@
       } else {
         delete customSchedules[key];
       }
+      saveCustomSchedules();
       updateCustomScheduleDisplay(selectedDate);
       updateEditPanelNote('保存しました');
       renderCalendar(currentYear, currentMonth);
     });
 
-    function init() {
+    async function init() {
       pageTitle.textContent = `本日の日付 - ${formatDisplayDate(today)}`;
       selectedDateLabel.textContent = formatDisplayDate(selectedDate);
       renderSchedule(formatDate(selectedDate));
+      loadCustomSchedules();
       renderCalendar(currentYear, currentMonth);
       updateDutySummary(selectedDate);
       updateCustomScheduleDisplay(selectedDate);
-      loadSavedMusic();
+      await loadSavedMusic();
+      const savedMeta = localStorage.getItem('savedMusicMeta');
+      if (savedMeta) {
+        try {
+          const parsed = JSON.parse(savedMeta);
+          if (parsed.name) {
+            musicMessage.textContent = `保存済みの曲: ${parsed.name}`;
+          }
+        } catch (e) {
+          // ignore meta parse error
+        }
+      }
     }
 
     init();
