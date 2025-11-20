@@ -56,11 +56,11 @@
     }
 
 .password-panel,
-.music-panel {
-  padding: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  background: #f9fafb;
+    .music-panel {
+      padding: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      background: #f9fafb;
 }
 
 .music-panel {
@@ -404,9 +404,11 @@
         <div class="status-text hidden" id="editStatus">編集モード中</div>
         <button class="hidden" id="exitEditButton">通常モードに戻る</button>
         <button class="hidden" id="musicButton">音楽の設定</button>
+        <button class="hidden" id="allowPlayButton">再生を許可</button>
         <div class="music-panel hidden" id="musicPanel">
           <div>流したい曲のファイルを選択してください</div>
           <input type="file" id="musicInput" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/x-m4a" />
+          <button id="musicReplay">保存した曲を再生</button>
           <button id="musicSave">音楽を保存</button>
           <div class="note">アップロード可能: MP3, WAV, OGG, M4A 形式</div>
           <div class="note" id="musicMessage"></div>
@@ -469,10 +471,12 @@
     const editStatus = document.getElementById('editStatus');
     const exitEditButton = document.getElementById('exitEditButton');
     const musicButton = document.getElementById('musicButton');
+    const allowPlayButton = document.getElementById('allowPlayButton');
     const musicPanel = document.getElementById('musicPanel');
     const musicInput = document.getElementById('musicInput');
     const musicMessage = document.getElementById('musicMessage');
     const musicSaveButton = document.getElementById('musicSave');
+    const musicReplayButton = document.getElementById('musicReplay');
     const musicLog = document.getElementById('musicLog');
 
     const today = new Date();
@@ -486,6 +490,8 @@
     let selectedMusicFile = null;
     let musicDb = null;
     let logEntries = [];
+    let savedMetaCache = null;
+    let firstInteractionHandled = false;
 
     function formatDate(date) {
       const y = date.getFullYear();
@@ -502,13 +508,45 @@
       return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日(${['日','月','火','水','木','金','土'][date.getDay()]})`;
     }
 
+    function renderMusicLog() {
+      if (!logEntries.length) {
+        musicLog.innerHTML = '<div class="music-log-entry">（ログはまだありません）</div>';
+        return;
+      }
+      musicLog.innerHTML = logEntries.map((entry) => `<div class="music-log-entry">${entry}</div>`).join('');
+    }
+
     function addMusicLog(message) {
       logEntries.unshift(`${new Date().toLocaleString()} - ${message}`);
       if (logEntries.length > 50) {
         logEntries = logEntries.slice(0, 50);
       }
-      musicLog.innerHTML = logEntries.map((entry) => `<div class="music-log-entry">${entry}</div>`).join('');
+      renderMusicLog();
       localStorage.setItem('musicLogEntries', JSON.stringify(logEntries));
+    }
+
+    function getSavedMusicMeta() {
+      if (savedMetaCache) return savedMetaCache;
+      const savedMeta = localStorage.getItem('savedMusicMeta');
+      if (savedMeta) {
+        try {
+          savedMetaCache = JSON.parse(savedMeta);
+        } catch (e) {
+          savedMetaCache = null;
+        }
+      }
+      return savedMetaCache;
+    }
+
+    function updateMusicReplayButton() {
+      const meta = getSavedMusicMeta();
+      if (meta && meta.name) {
+        musicReplayButton.disabled = false;
+        musicReplayButton.textContent = `保存した曲を再生 (${meta.name})`;
+      } else {
+        musicReplayButton.disabled = true;
+        musicReplayButton.textContent = '保存した曲を再生';
+      }
     }
 
     function renderSchedule(dateStr) {
@@ -826,6 +864,7 @@
         editModeButton.disabled = true;
         exitEditButton.classList.remove('hidden');
         musicButton.classList.remove('hidden');
+        allowPlayButton.classList.remove('hidden');
         updateEditPanel(selectedDate);
       } else {
         passwordMessage.textContent = 'パスワードが違います';
@@ -834,7 +873,14 @@
 
     musicButton.addEventListener('click', () => {
       musicPanel.classList.toggle('hidden');
+      const willShow = !musicPanel.classList.contains('hidden');
+      musicPanel.classList.toggle('hidden', !willShow);
       musicMessage.textContent = '';
+      updateMusicReplayButton();
+      if (willShow) {
+        addMusicLog('音楽パネルを開きました。保存済みの曲の再生を再試行します。');
+        loadSavedMusic();
+      }
     });
 
     exitEditButton.addEventListener('click', () => {
@@ -863,6 +909,7 @@
       playAudioSource(objectUrl, file.name, true);
       musicMessage.textContent = `選択した曲: ${file.name}（保存するには「音楽を保存」を押してください）`;
       addMusicLog(`選択: ${file.name}`);
+      musicReplayButton.disabled = true;
     });
 
     musicSaveButton.addEventListener('click', async () => {
@@ -881,6 +928,8 @@
         musicMessage.textContent = `保存した曲: ${file.name}`;
         addMusicLog(`保存（IndexedDB）: ${file.name}`);
         savedInDb = true;
+        savedMetaCache = { name: file.name };
+        updateMusicReplayButton();
       } catch (e) {
         dbError = e;
         musicMessage.textContent = 'IndexedDBへの保存に失敗しました。ローカルストレージへ保存を試みます。';
@@ -893,6 +942,8 @@
         try {
           localStorage.setItem('savedMusic', JSON.stringify({ name: file.name, dataUrl: reader.result }));
           localStorage.setItem('savedMusicMeta', JSON.stringify({ name: file.name }));
+          savedMetaCache = { name: file.name };
+          updateMusicReplayButton();
           if (!savedInDb) {
             playAudioSource(reader.result, file.name, false);
             musicMessage.textContent = `保存した曲: ${file.name}`;
@@ -915,6 +966,24 @@
       reader.readAsDataURL(file);
     });
 
+    allowPlayButton.addEventListener('click', () => {
+      addMusicLog('再生許可ボタン押下: 保存済みの曲を再試行');
+      loadSavedMusic();
+      allowPlayButton.textContent = '再生を許可';
+      allowPlayButton.classList.add('hidden');
+    });
+
+    document.addEventListener(
+      'click',
+      () => {
+        if (firstInteractionHandled) return;
+        firstInteractionHandled = true;
+        addMusicLog('初回クリック検知: 再生を再試行');
+        loadSavedMusic();
+      },
+      { once: true }
+    );
+
     scheduleInput.addEventListener('input', () => updateEditPanelNote());
 
     saveScheduleButton.addEventListener('click', () => {
@@ -932,6 +1001,11 @@
       renderCalendar(currentYear, currentMonth);
     });
 
+    musicReplayButton.addEventListener('click', () => {
+      addMusicLog('再生ボタン押下: 保存済みの曲を再試行');
+      loadSavedMusic();
+    });
+
     async function init() {
       pageTitle.textContent = `本日の日付 - ${formatDisplayDate(today)}`;
       selectedDateLabel.textContent = formatDisplayDate(selectedDate);
@@ -940,17 +1014,17 @@
       renderCalendar(currentYear, currentMonth);
       updateDutySummary(selectedDate);
       updateCustomScheduleDisplay(selectedDate);
+      updateMusicReplayButton();
+      allowPlayButton.classList.remove('hidden');
       const storedLog = localStorage.getItem('musicLogEntries');
       if (storedLog) {
         try {
           logEntries = JSON.parse(storedLog);
-          musicLog.innerHTML = logEntries
-            .map((entry) => `<div class="music-log-entry">${entry}</div>`)
-            .join('');
         } catch (e) {
           logEntries = [];
         }
       }
+      renderMusicLog();
       await loadSavedMusic();
       const savedMeta = localStorage.getItem('savedMusicMeta');
       if (savedMeta) {
@@ -959,6 +1033,8 @@
           if (parsed.name) {
             musicMessage.textContent = `保存した曲: ${parsed.name}`;
             addMusicLog(`保存名確認: ${parsed.name}`);
+            savedMetaCache = { name: parsed.name };
+            updateMusicReplayButton();
           }
         } catch (e) {
           // ignore meta parse error
