@@ -148,6 +148,22 @@
       font-size: 0.9rem;
     }
 
+    .music-log {
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      max-height: 180px;
+      overflow-y: auto;
+      font-size: 0.9rem;
+      color: #374151;
+    }
+
+    .music-log-entry {
+      margin: 0 0 4px;
+    }
+
     .hidden {
       display: none;
     }
@@ -394,6 +410,7 @@
           <button id="musicSave">音楽を保存</button>
           <div class="note">アップロード可能: MP3, WAV, OGG, M4A 形式</div>
           <div class="note" id="musicMessage"></div>
+          <div class="music-log" id="musicLog"></div>
         </div>
       </div>
     </section>
@@ -456,6 +473,7 @@
     const musicInput = document.getElementById('musicInput');
     const musicMessage = document.getElementById('musicMessage');
     const musicSaveButton = document.getElementById('musicSave');
+    const musicLog = document.getElementById('musicLog');
 
     const today = new Date();
     let currentYear = today.getFullYear();
@@ -467,6 +485,7 @@
     let audioObjectUrl = '';
     let selectedMusicFile = null;
     let musicDb = null;
+    let logEntries = [];
 
     function formatDate(date) {
       const y = date.getFullYear();
@@ -481,6 +500,15 @@
 
     function formatDisplayDate(date) {
       return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日(${['日','月','火','水','木','金','土'][date.getDay()]})`;
+    }
+
+    function addMusicLog(message) {
+      logEntries.unshift(`${new Date().toLocaleString()} - ${message}`);
+      if (logEntries.length > 50) {
+        logEntries = logEntries.slice(0, 50);
+      }
+      musicLog.innerHTML = logEntries.map((entry) => `<div class="music-log-entry">${entry}</div>`).join('');
+      localStorage.setItem('musicLogEntries', JSON.stringify(logEntries));
     }
 
     function renderSchedule(dateStr) {
@@ -552,7 +580,7 @@
             const tx = db.transaction('files', 'readwrite');
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
-            tx.objectStore('files').put({ id: 'current', name: file.name, type: file.type, blob: file });
+            tx.objectStore('files').put({ name: file.name, type: file.type, blob: file }, 'current');
           })
       );
     }
@@ -728,9 +756,11 @@
       }
       audioPlayer.src = src;
       audioPlayer.play().then(() => {
-        musicMessage.textContent = `再生中: ${name}`;
+        musicMessage.textContent = `保存した曲: ${name}`;
+        addMusicLog(`再生開始: ${name}`);
       }).catch(() => {
-        musicMessage.textContent = `保存済みの曲: ${name}（再生がブロックされています。音楽の設定を開いて再生してください）`;
+        musicMessage.textContent = `保存した曲: ${name}（再生がブロックされています。音楽の設定を開いて再生してください）`;
+        addMusicLog(`再生ブロック: ${name}`);
       });
     }
 
@@ -741,11 +771,13 @@
         if (saved && saved.blob) {
           const src = URL.createObjectURL(saved.blob);
           playAudioSource(src, saved.name || '保存された曲', true);
-          musicMessage.textContent = `保存済みの曲: ${saved.name || '保存された曲'}`;
+          musicMessage.textContent = `保存した曲: ${saved.name || '保存された曲'}`;
+          addMusicLog(`保存データ読込（IndexedDB）: ${saved.name || '保存された曲'}`);
           return;
         }
       } catch (e) {
         // DB取得に失敗した場合はローカルストレージへフォールバック
+        addMusicLog('IndexedDBからの読込に失敗。localStorageにフォールバックします。');
       }
 
       const savedLocal = localStorage.getItem('savedMusic');
@@ -754,10 +786,25 @@
           const parsed = JSON.parse(savedLocal);
           if (parsed.dataUrl && parsed.name) {
             playAudioSource(parsed.dataUrl, parsed.name, false);
-            musicMessage.textContent = `保存済みの曲: ${parsed.name}`;
+            musicMessage.textContent = `保存した曲: ${parsed.name}`;
+            addMusicLog(`保存データ読込（localStorage）: ${parsed.name}`);
+            return;
           }
         } catch (e) {
           // 保存データが壊れている場合は無視
+        }
+      }
+
+      const savedMeta = localStorage.getItem('savedMusicMeta');
+      if (savedMeta) {
+        try {
+          const parsed = JSON.parse(savedMeta);
+          if (parsed.name) {
+            musicMessage.textContent = `保存した曲: ${parsed.name}`;
+            addMusicLog(`保存名のみ復元: ${parsed.name}`);
+          }
+        } catch (e) {
+          // ignore meta parse error
         }
       }
     }
@@ -814,7 +861,8 @@
       selectedMusicFile = file;
       const objectUrl = URL.createObjectURL(file);
       playAudioSource(objectUrl, file.name, true);
-      musicMessage.textContent += '（保存するには「音楽を保存」を押してください）';
+      musicMessage.textContent = `選択した曲: ${file.name}（保存するには「音楽を保存」を押してください）`;
+      addMusicLog(`選択: ${file.name}`);
     });
 
     musicSaveButton.addEventListener('click', async () => {
@@ -830,11 +878,13 @@
         localStorage.setItem('savedMusicMeta', JSON.stringify({ name: file.name }));
         const objectUrl = URL.createObjectURL(file);
         playAudioSource(objectUrl, file.name, true);
-        musicMessage.textContent = `保存しました: ${file.name}`;
+        musicMessage.textContent = `保存した曲: ${file.name}`;
+        addMusicLog(`保存（IndexedDB）: ${file.name}`);
         savedInDb = true;
       } catch (e) {
         dbError = e;
         musicMessage.textContent = 'IndexedDBへの保存に失敗しました。ローカルストレージへ保存を試みます。';
+        addMusicLog(`IndexedDB保存失敗: ${e && e.message ? e.message : e}`);
       }
 
       // フォールバック: 旧バージョンのデータ形式も保持
@@ -845,18 +895,22 @@
           localStorage.setItem('savedMusicMeta', JSON.stringify({ name: file.name }));
           if (!savedInDb) {
             playAudioSource(reader.result, file.name, false);
-            musicMessage.textContent = `ローカルストレージに保存しました: ${file.name}`;
+            musicMessage.textContent = `保存した曲: ${file.name}`;
+            addMusicLog(`保存（localStorage）: ${file.name}`);
           }
         } catch (e) {
           musicMessage.textContent =
             '音楽を保存できませんでした。プライベートブラウズを解除するか、ストレージ空き容量を確認してください。';
+          addMusicLog('localStorage保存失敗（容量・設定の可能性）');
           if (dbError) {
             musicMessage.textContent += '（IndexedDB/LocalStorage両方で失敗）';
+            addMusicLog('IndexedDBとlocalStorage両方で保存失敗');
           }
         }
       };
       reader.onerror = () => {
         musicMessage.textContent = 'ファイルの読み込みに失敗しました。';
+        addMusicLog('ファイル読み込みに失敗');
       };
       reader.readAsDataURL(file);
     });
@@ -886,13 +940,25 @@
       renderCalendar(currentYear, currentMonth);
       updateDutySummary(selectedDate);
       updateCustomScheduleDisplay(selectedDate);
+      const storedLog = localStorage.getItem('musicLogEntries');
+      if (storedLog) {
+        try {
+          logEntries = JSON.parse(storedLog);
+          musicLog.innerHTML = logEntries
+            .map((entry) => `<div class="music-log-entry">${entry}</div>`)
+            .join('');
+        } catch (e) {
+          logEntries = [];
+        }
+      }
       await loadSavedMusic();
       const savedMeta = localStorage.getItem('savedMusicMeta');
       if (savedMeta) {
         try {
           const parsed = JSON.parse(savedMeta);
           if (parsed.name) {
-            musicMessage.textContent = `保存済みの曲: ${parsed.name}`;
+            musicMessage.textContent = `保存した曲: ${parsed.name}`;
+            addMusicLog(`保存名確認: ${parsed.name}`);
           }
         } catch (e) {
           // ignore meta parse error
