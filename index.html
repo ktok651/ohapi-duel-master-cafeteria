@@ -36,6 +36,122 @@
       width: 420px;
     }
 
+    .calendar-actions {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .calendar-actions button {
+      align-self: flex-start;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+.password-panel,
+.music-panel {
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+}
+
+.music-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.music-panel button {
+  align-self: flex-start;
+  border: none;
+  background: #8b5cf6;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+    .password-panel input {
+      margin-top: 6px;
+      padding: 6px;
+      width: 180px;
+    }
+
+    .password-panel button {
+      margin-left: 8px;
+    }
+
+    .status-text {
+      font-weight: 600;
+      color: #065f46;
+    }
+
+    .edit-panel {
+      margin-top: 16px;
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f3f4f6;
+    }
+
+    .edit-panel textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      resize: vertical;
+    }
+
+    .edit-panel button {
+      margin-top: 8px;
+      border: none;
+      background: #16a34a;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .custom-schedule-display {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    td.custom-scheduled {
+      background: #111827;
+      color: #f9fafb;
+    }
+
+    td.custom-scheduled .day-number {
+      color: inherit;
+    }
+
+    td.custom-scheduled.has-event::after {
+      background: #fbbf24;
+    }
+
+    .note {
+      margin: 6px 0 0;
+      color: #4b5563;
+      font-size: 0.9rem;
+    }
+
+    .hidden {
+      display: none;
+    }
+
     h1 {
       margin: 0 0 16px;
     }
@@ -231,8 +347,14 @@
       <ul class="schedule-list" id="scheduleList"></ul>
       <div class="duty-summary">
         <p class="selected-date" id="selectedDate"></p>
-        <p class="duty-label">小原の勤務予定</p>
-        <p class="duty-value" id="dutyValue">-</p>
+        <p class="duty-value" id="dutyValue">小原の勤務予定：-</p>
+      </div>
+      <div class="custom-schedule-display" id="customScheduleDisplay">-</div>
+      <div class="edit-panel hidden" id="scheduleEditPanel">
+        <p id="editPanelTitle"></p>
+        <textarea id="scheduleInput" maxlength="200" placeholder="200文字以内で予定を入力してください"></textarea>
+        <button id="saveSchedule">保存</button>
+        <p class="note" id="editPanelNote"></p>
       </div>
     </section>
     <section class="calendar-panel">
@@ -255,6 +377,24 @@
         </thead>
         <tbody id="calendarBody"></tbody>
       </table>
+      <div class="calendar-actions">
+        <button id="editModeButton">編集モード</button>
+        <div class="password-panel hidden" id="passwordPanel">
+          <div>パスワードを入力してください</div>
+          <input type="password" id="passwordInput" placeholder="******" />
+          <button id="passwordSubmit">送信</button>
+          <div class="note" id="passwordMessage"></div>
+        </div>
+        <div class="status-text hidden" id="editStatus">編集モード中</div>
+        <button class="hidden" id="musicButton">音楽の設定</button>
+        <div class="music-panel hidden" id="musicPanel">
+          <div>流したい曲のファイルを選択してください</div>
+          <input type="file" id="musicInput" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/x-m4a" />
+          <button id="musicSave">音楽を保存</button>
+          <div class="note">アップロード可能: MP3, WAV, OGG, M4A 形式</div>
+          <div class="note" id="musicMessage"></div>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -297,17 +437,43 @@
     const selectedDateLabel = document.getElementById('selectedDate');
     const scheduleList = document.getElementById('scheduleList');
     const dutyValue = document.getElementById('dutyValue');
+    const customScheduleDisplay = document.getElementById('customScheduleDisplay');
+    const scheduleEditPanel = document.getElementById('scheduleEditPanel');
+    const editPanelTitle = document.getElementById('editPanelTitle');
+    const scheduleInput = document.getElementById('scheduleInput');
+    const saveScheduleButton = document.getElementById('saveSchedule');
+    const editPanelNote = document.getElementById('editPanelNote');
+    const editModeButton = document.getElementById('editModeButton');
+    const passwordPanel = document.getElementById('passwordPanel');
+    const passwordInput = document.getElementById('passwordInput');
+    const passwordSubmit = document.getElementById('passwordSubmit');
+    const passwordMessage = document.getElementById('passwordMessage');
+    const editStatus = document.getElementById('editStatus');
+    const musicButton = document.getElementById('musicButton');
+    const musicPanel = document.getElementById('musicPanel');
+    const musicInput = document.getElementById('musicInput');
+    const musicMessage = document.getElementById('musicMessage');
+    const musicSaveButton = document.getElementById('musicSave');
 
     const today = new Date();
     let currentYear = today.getFullYear();
     let currentMonth = today.getMonth();
     let selectedDate = new Date(today);
+    let isEditMode = false;
+    const customSchedules = {};
+    let audioPlayer = null;
+    let audioObjectUrl = '';
+    let selectedMusicFile = null;
 
     function formatDate(date) {
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
       return `${y}-${m}-${d}`;
+    }
+
+    function formatMonthDay(date) {
+      return `${date.getMonth() + 1}月${date.getDate()}日`;
     }
 
     function formatDisplayDate(date) {
@@ -326,7 +492,33 @@
 
     function updateDutySummary(date) {
       const info = getBandInfo(date);
-      dutyValue.textContent = info ? info.label : '―';
+      dutyValue.textContent = info
+        ? `小原の勤務予定：${info.label}${info.label === '休' ? '' : '勤務'} ${info.day}日目`
+        : '小原の勤務予定：―';
+    }
+
+    function updateCustomScheduleDisplay(date) {
+      const key = formatDate(date);
+      const text = (customSchedules[key] || '').trim();
+      customScheduleDisplay.textContent = `${formatMonthDay(date)}の予定：${text || 'なし'}`;
+    }
+
+    function updateEditPanel(date) {
+      if (!isEditMode) {
+        scheduleEditPanel.classList.add('hidden');
+        return;
+      }
+      const key = formatDate(date);
+      scheduleEditPanel.classList.remove('hidden');
+      editPanelTitle.textContent = `${formatMonthDay(date)}の予定の追加`;
+      scheduleInput.value = customSchedules[key] || '';
+      updateEditPanelNote();
+    }
+
+    function updateEditPanelNote(message = '') {
+      const remaining = 200 - scheduleInput.value.length;
+      const base = `残り${remaining}文字`;
+      editPanelNote.textContent = message ? `${message} / ${base}` : base;
     }
 
     function getBandInfo(date) {
@@ -350,7 +542,8 @@
           return {
             label: block.label,
             color: bandColors[block.label],
-            position
+            position,
+            day: offset - spanStart + 1
           };
         }
         accumulated += block.days;
@@ -403,6 +596,10 @@
             td.classList.add('has-event');
           }
 
+          if (customSchedules[cellDateStr] && customSchedules[cellDateStr].trim()) {
+            td.classList.add('custom-scheduled');
+          }
+
           if (isToday) {
             td.classList.add('today');
           }
@@ -416,6 +613,8 @@
             selectedDateLabel.textContent = formatDisplayDate(cellDate);
             renderSchedule(cellDateStr);
             updateDutySummary(cellDate);
+            updateCustomScheduleDisplay(cellDate);
+            updateEditPanel(cellDate);
             renderCalendar(currentYear, currentMonth);
           });
 
@@ -446,12 +645,127 @@
       renderCalendar(currentYear, currentMonth);
     });
 
+    function playAudioSource(src, name, isObjectUrl = false) {
+      if (audioObjectUrl && audioObjectUrl !== src) {
+        URL.revokeObjectURL(audioObjectUrl);
+        audioObjectUrl = '';
+      }
+      if (isObjectUrl) {
+        audioObjectUrl = src;
+      }
+      if (!audioPlayer) {
+        audioPlayer = new Audio();
+        audioPlayer.loop = true;
+      }
+      audioPlayer.src = src;
+      audioPlayer.play().then(() => {
+        musicMessage.textContent = `再生中: ${name}`;
+      }).catch(() => {
+        musicMessage.textContent = '再生を開始できませんでした。ブラウザの設定を確認してください。';
+      });
+    }
+
+    function loadSavedMusic() {
+      const saved = localStorage.getItem('savedMusic');
+      if (!saved) return;
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.dataUrl && parsed.name) {
+          playAudioSource(parsed.dataUrl, parsed.name, false);
+        }
+      } catch (e) {
+        // 保存データが壊れている場合は無視
+      }
+    }
+
+    editModeButton.addEventListener('click', () => {
+      passwordPanel.classList.remove('hidden');
+      passwordMessage.textContent = '';
+      passwordInput.value = '';
+      passwordInput.focus();
+    });
+
+    passwordSubmit.addEventListener('click', () => {
+      if (passwordInput.value === '214171') {
+        isEditMode = true;
+        passwordPanel.classList.add('hidden');
+        passwordMessage.textContent = '';
+        editStatus.classList.remove('hidden');
+        editModeButton.textContent = '編集モード中';
+        editModeButton.disabled = true;
+        musicButton.classList.remove('hidden');
+        updateEditPanel(selectedDate);
+      } else {
+        passwordMessage.textContent = 'パスワードが違います';
+      }
+    });
+
+    musicButton.addEventListener('click', () => {
+      musicPanel.classList.toggle('hidden');
+      musicMessage.textContent = '';
+    });
+
+    musicInput.addEventListener('change', () => {
+      const file = musicInput.files[0];
+      if (!file) return;
+      const mimeOk = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'].includes(file.type);
+      const extOk = file.name.toLowerCase().endsWith('.m4a');
+      if (!mimeOk && !extOk) {
+        musicMessage.textContent = '対応形式ではありません（MP3 / WAV / OGG / M4A）';
+        return;
+      }
+      selectedMusicFile = file;
+      const objectUrl = URL.createObjectURL(file);
+      playAudioSource(objectUrl, file.name, true);
+      musicMessage.textContent += '（保存するには「音楽を保存」を押してください）';
+    });
+
+    musicSaveButton.addEventListener('click', () => {
+      if (!selectedMusicFile) {
+        musicMessage.textContent = '先に音楽ファイルを選択してください。';
+        return;
+      }
+      const file = selectedMusicFile;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          localStorage.setItem('savedMusic', JSON.stringify({ name: file.name, dataUrl: reader.result }));
+          musicMessage.textContent = `保存しました: ${file.name}`;
+          playAudioSource(reader.result, file.name, false);
+        } catch (e) {
+          musicMessage.textContent = '保存に失敗しました。ストレージ容量を確認してください。';
+        }
+      };
+      reader.onerror = () => {
+        musicMessage.textContent = 'ファイルの読み込みに失敗しました。';
+      };
+      reader.readAsDataURL(file);
+    });
+
+    scheduleInput.addEventListener('input', () => updateEditPanelNote());
+
+    saveScheduleButton.addEventListener('click', () => {
+      if (!isEditMode) return;
+      const key = formatDate(selectedDate);
+      const value = scheduleInput.value.trim();
+      if (value) {
+        customSchedules[key] = value;
+      } else {
+        delete customSchedules[key];
+      }
+      updateCustomScheduleDisplay(selectedDate);
+      updateEditPanelNote('保存しました');
+      renderCalendar(currentYear, currentMonth);
+    });
+
     function init() {
       pageTitle.textContent = `本日の日付 - ${formatDisplayDate(today)}`;
       selectedDateLabel.textContent = formatDisplayDate(selectedDate);
       renderSchedule(formatDate(selectedDate));
       renderCalendar(currentYear, currentMonth);
       updateDutySummary(selectedDate);
+      updateCustomScheduleDisplay(selectedDate);
+      loadSavedMusic();
     }
 
     init();
