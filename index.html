@@ -561,9 +561,9 @@
 
     function updateDutySummary(date) {
       const info = getBandInfo(date);
-      dutyValue.textContent = info
-        ? `小原の勤務予定：${info.label}${info.label === '休' ? '' : '勤務'} ${info.day}日目`
-        : '小原の勤務予定：―';
+        dutyValue.textContent = info
+          ? `小原の勤務予定：${info.label} ${info.day}日目`
+          : '小原の勤務予定：―';
     }
 
     function updateCustomScheduleDisplay(date) {
