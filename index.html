@@ -440,15 +440,15 @@
     };
 
     const bandCycle = [
-      { label: 'A', days: 4 },
+      { label: '日勤', days: 4 },
       { label: '休', days: 1 },
-      { label: 'C', days: 4 },
+      { label: '夜勤', days: 4 },
       { label: '休', days: 2 },
-      { label: 'B', days: 4 },
+      { label: '前夜勤', days: 4 },
       { label: '休', days: 1 }
     ];
 
-    const cycleStartDate = new Date('2025-11-09T00:00:00');
+    const cycleStartDate = new Date('2026-06-08T00:00:00');
     const cycleLength = bandCycle.reduce((sum, block) => sum + block.days, 0);
 
     const pageTitle = document.getElementById('pageTitle');
