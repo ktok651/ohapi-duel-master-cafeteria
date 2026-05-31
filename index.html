@@ -419,19 +419,23 @@
   </div>
 
   <script>
-    const scheduleData = {
-      '2024-06-05': [
-        { title: '企画ミーティング', time: '10:00-11:00' },
-        { title: 'ランチ @社外', time: '12:30-13:30' }
+    const yearlyEvents = {
+      '05-13': [
+        { title: 'さとしの誕生日', time: '終日' }
       ],
-      '2024-06-10': [
-        { title: 'クライアント訪問', time: '14:00-15:30' }
+      '06-23': [
+        { title: 'こうすけの誕生日', time: '終日' }
       ],
-      '2024-06-21': [
-        { title: '社内勉強会', time: '16:00-17:30' }
+      '08-26': [
+        { title: '長坂の誕生日', time: '終日' }
+      ]
+      '02-06': [
+        { title: 'おはらの誕生日', time: '終日' }
+      ]
+      '02-09': [
+        { title: '俺の誕生日', time: '終日' }
       ]
     };
-
     const bandColors = {
       '日勤': 'rgba(239, 68, 68, 0.35)',
       '前夜勤': 'rgba(59, 130, 246, 0.35)',
@@ -485,6 +489,7 @@
     let selectedDate = new Date(today);
     let isEditMode = false;
     const customSchedules = {};
+    const recurringSchedules = {};
     let audioPlayer = null;
     let audioObjectUrl = '';
     let selectedMusicFile = null;
@@ -550,7 +555,15 @@
     }
 
     function renderSchedule(dateStr) {
-      const schedules = scheduleData[dateStr] || [];
+      const date = new Date(dateStr);
+    
+      const yearlyKey =
+        `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+      const schedules = [
+        ...(yearlyEvents[yearlyKey] || []),
+        ...(scheduleData[dateStr] || [])
+      ];
       scheduleList.innerHTML = '';
       schedules.forEach(({ title, time }) => {
         const li = document.createElement('li');
@@ -727,7 +740,13 @@
             td.appendChild(band);
           }
 
-          if (scheduleData[cellDateStr]) {
+          const yearlyKey =
+            `${String(cellDate.getMonth() + 1).padStart(2, '0')}-${String(cellDate.getDate()).padStart(2, '0')}`;
+          
+          if (
+            scheduleData[cellDateStr] ||
+            yearlyEvents[yearlyKey]
+          ) {
             td.classList.add('has-event');
           }
 
